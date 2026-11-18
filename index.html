@@ -302,7 +302,7 @@ function onKey(code, e) {
   if (code === 'KeyM') { save.muted = !save.muted; persist(); return; }
   if (G.scene === 'play' && (code === 'KeyP' || code === 'Escape')) { G.paused = !G.paused; return; }
   if (G.scene === 'bonus') { bonusKey(code); if (code === 'Enter' || code === 'Space') { const b = uiBtns.find(b => b.primary); if (b) b.fn(); } return; }
-  if (G.scene === 'play' && !G.paused) return;
+  if (G.scene === 'play' && !G.paused && !G.fact) return;
   if (code === 'Enter' || code === 'Space') { const b = uiBtns.find(b => b.primary); if (b) { SFX.click(); b.fn(); } e && e.preventDefault(); }
 }
 
@@ -390,7 +390,7 @@ function inHide(h, x, y) {
   return x > h.x - h.w / 2 && x < h.x + h.w / 2 && y > h.top && y < h.bot;
 }
 function tryDash() {
-  if (G.scene === 'play' && LV && !G.paused) {
+  if (G.scene === 'play' && LV && !G.paused && !G.fact) {
     const wa = LV.wa; if (wa.dashCd <= 0) { wa.dash = .32; wa.dashCd = .9; SFX.dash(); }
   }
 }
@@ -1191,16 +1191,20 @@ function drawHUD(st) {
   if (isTouch) button('DASH', W - 120, H - 92, 100, 72, () => tryDash(), { bg: 'rgba(255,143,58,.7)', size: 20, r: 36 });
 }
 function drawFactPop() {
-  if (!G.fact) return;
-  const f = G.fact, a = clamp(Math.min(f.t * 4, (9 - f.t) * 2), 0, 1);
+  // The action is frozen while a fact is open, so it never covers live play.
+  if (!G.fact || G.scene !== 'play') return;
+  const f = G.fact, a = clamp(f.t * 5, 0, 1);
+  ctx.fillStyle = `rgba(5,20,25,${.45 * a})`; ctx.fillRect(0, 0, W, H);
   ctx.save(); ctx.globalAlpha = a;
-  const w = 720, x = (W - w) / 2, lines = wrapLines(FACTS[f.id], w - 120, 18);
-  const h = 50 + lines.length * 24, y = H - h - 16 + (1 - a) * 30;
-  panel(x, y, w, h, 'rgba(255,250,236,.96)', 16);
-  ctx.fillStyle = '#ffcf3a'; circle(x + 42, y + h / 2, 24); txt('?', x + 42, y + h / 2 + 1, 28, '#7a4a00', 'center', 700);
-  txt(f.title + (f.isNew ? '  · NEW in your Fact Journal!' : ''), x + 80, y + 20, 16, '#c0581a', 'left', 700);
-  lines.forEach((l, i) => txt(l, x + 80, y + 44 + i * 24, 18, '#23343a', 'left', 400));
+  const w = 620, x = (W - w) / 2, lines = wrapLines(FACTS[f.id], w - 140, 20);
+  const h = 150 + lines.length * 27, y = (H - h) / 2 + (1 - a) * 20;
+  panel(x, y, w, h, 'rgba(255,250,236,.98)', 20);
+  ctx.fillStyle = '#ffcf3a'; circle(x + 52, y + 56, 28); txt('?', x + 52, y + 57, 32, '#7a4a00', 'center', 700);
+  txt(f.title, x + 96, y + 38, 20, '#c0581a', 'left', 700);
+  if (f.isNew) txt('NEW in your Fact Journal!', x + 96, y + 62, 14, '#2f9c95', 'left', 700);
+  lines.forEach((l, i) => txt(l, x + 96, y + 96 + i * 27, 20, '#23343a', 'left', 400));
   ctx.restore();
+  button('Got it!  ▶', W / 2 - 90, y + h - 62, 180, 46, () => { G.fact = null; LV.wa.inv = Math.max(LV.wa.inv, .8); }, { primary: true, size: 20 });
 }
 function drawPause() {
   ctx.fillStyle = 'rgba(5,20,25,.6)'; ctx.fillRect(0, 0, W, H);
@@ -1528,8 +1532,8 @@ function bonusHud(label, left) {
 function update(dt) {
   G.t += dt; G.shake = Math.max(0, G.shake - dt * 30);
   if (!G.fact && G.factQ.length) G.fact = { ...G.factQ.shift(), t: 0 };
-  if (G.fact && (G.scene !== 'play' || !G.paused)) { G.fact.t += dt; if (G.fact.t > 9) G.fact = null; }
-  if (G.scene === 'play' && !G.paused) updatePlay(dt);
+  if (G.fact) G.fact.t += dt;
+  if (G.scene === 'play' && !G.paused && !G.fact) updatePlay(dt);
   else if (G.scene === 'bonus') updateBonus(dt);
 }
 function draw() {
