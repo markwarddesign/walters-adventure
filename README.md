@@ -1,6 +1,10 @@
 # Walter's Adventures
 
-A side-scrolling swim-and-survive game about **Walter**, who starts life looking just like an axolotl and grows up into a **Western Tiger Salamander**.
+A side-scrolling swim-and-survive game with three axolotl adventures:
+
+- **Walter's Big Change** — Walter starts life looking just like an axolotl and grows up into a **Western Tiger Salamander** that walks on land (5 levels).
+- **Xochi's Canal Quest** — a wild-type axolotl in the canals of Xochimilco, Mexico, dodging invasive tilapia and carp, trash and herons on the way to a clean-water refuge (3 levels).
+- **Rosie's Aquarium Adventure** — a pink leucistic axolotl learning what pet axolotls need: no gravel, no fish tankmates, cool water and a tank lid (3 levels).
 
 **Play it:** https://markwarddesign.github.io/walters-adventure/
 
@@ -14,7 +18,7 @@ Walter is based on a real Western Tiger Salamander who was a much-loved family p
 
 Eat food to fill the **Growth** meter, then head to the exit on the far right. Hide in weeds, rocks, logs, ferns and burrows when predators come near. Lost a heart? Wait a bit — salamanders regenerate!
 
-## Levels
+## Walter's levels
 
 | # | Level | Walter is a… | Eats | Watch out for |
 |---|-------|--------------|------|---------------|
@@ -28,7 +32,7 @@ Bonus rounds between levels: **Bubble Bonanza**, **Axolotl Quiz**, **Morph Match
 
 ## Learning
 
-36 real axolotl and tiger salamander facts show up in fact bubbles, level cards and quizzes. Discovered facts are saved in **Walter's Fact Journal** on the title screen.
+53 real axolotl and tiger salamander facts show up in fact bubbles, level cards and quizzes. Discovered facts are saved in **Walter's Fact Journal** on the title screen.
 
 ## Tech
 
