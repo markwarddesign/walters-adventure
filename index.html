@@ -85,7 +85,7 @@ function panel(x, y, w, h, fill = 'rgba(255,250,236,.97)', r = 20) {
 
 /* ---------------- save ---------------- */
 const SAVE_KEY = 'waltersAdventure';
-const save = { facts: [], best: 0, muted: false };
+const save = { facts: [], best: 0, muted: false, controls: 'tap' };
 try { Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); } catch (e) {}
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 function learn(id) { if (!save.facts.includes(id)) { save.facts.push(id); persist(); return true; } return false; }
@@ -266,16 +266,45 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) keys[k] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; pointer.down = false; if (G.scene === 'play') G.paused = true; });
 function toCanvas(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; }
+// On-screen arrow pad (Settings → Arrow buttons). Every finger is tracked so you can steer and dash at once.
+const PAD = { x: 120, y: H - 120, r: 132 };
+const touches = new Map(), vk = { left: false, right: false, up: false, down: false };
+let lastTap = { t: 0, x: 0, y: 0 };
+const usePad = () => save.controls === 'pad';
+const onPad = (x, y) => usePad() && G.scene === 'play' && dist(x, y, PAD.x, PAD.y) < PAD.r;
+function computeVK() {
+  vk.left = vk.right = vk.up = vk.down = false;
+  if (!usePad() || G.scene !== 'play') return;
+  for (const p of touches.values()) {
+    const dx = p.x - PAD.x, dy = p.y - PAD.y;
+    if (Math.hypot(dx, dy) > PAD.r) continue;
+    if (dx < -18) vk.left = true; if (dx > 18) vk.right = true;
+    if (dy < -18) vk.up = true; if (dy > 18) vk.down = true;
+  }
+}
 cv.addEventListener('pointerdown', e => {
   audio(); e.preventDefault();
   if (e.pointerType === 'touch') isTouch = true;
-  const p = toCanvas(e); pointer.x = p.x; pointer.y = p.y; pointer.down = true; pointer.inside = true;
-  pointer.mouse = e.pointerType === 'mouse';
+  const p = toCanvas(e);
   try { cv.setPointerCapture(e.pointerId); } catch (er) {}
-  pointer.steer = !clickAt(p.x, p.y);
+  touches.set(e.pointerId, p);
+  pointer.id = e.pointerId; pointer.x = p.x; pointer.y = p.y; pointer.down = true; pointer.inside = true;
+  pointer.mouse = e.pointerType === 'mouse';
+  const handled = clickAt(p.x, p.y), pad = onPad(p.x, p.y);
+  pointer.steer = !handled && !pad && !(usePad() && G.scene === 'play');
+  // double-tap anywhere (not on a button or the pad) to dash
+  if (!pointer.mouse && !handled && !pad && G.scene === 'play') {
+    const now = performance.now();
+    if (now - lastTap.t < 330 && dist(p.x, p.y, lastTap.x, lastTap.y) < 110) { tryDash(); lastTap.t = 0; }
+    else lastTap = { t: now, x: p.x, y: p.y };
+  }
 });
-cv.addEventListener('pointermove', e => { const p = toCanvas(e); pointer.x = p.x; pointer.y = p.y; pointer.inside = true; pointer.mouse = e.pointerType === 'mouse'; });
-const up = () => { pointer.down = false; pointer.steer = false; };
+cv.addEventListener('pointermove', e => {
+  const p = toCanvas(e);
+  if (touches.has(e.pointerId)) touches.set(e.pointerId, p);
+  if (e.pointerId === pointer.id || !pointer.down) { pointer.x = p.x; pointer.y = p.y; pointer.inside = true; pointer.mouse = e.pointerType === 'mouse'; }
+});
+const up = e => { touches.delete(e.pointerId); if (e.pointerId === pointer.id) { pointer.down = false; pointer.steer = false; } };
 cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 cv.addEventListener('pointerleave', () => { if (!pointer.down) pointer.inside = false; });
 
@@ -290,7 +319,11 @@ function button(label, x, y, w, h, fn, o = {}) {
   txt(label, x + w / 2, y + h / 2 - (hov ? 2 : 0) + 1, o.size || 22, o.color || '#fff', 'center', 700);
   btns.push({ x, y, w, h, fn, primary: !!o.primary });
 }
+const HUB_URL = 'https://markwarddesign.github.io/';
+function goHub() { location.href = HUB_URL; }
+function dismissFact() { G.fact = null; lastTap.t = 0; if (LV) LV.wa.inv = Math.max(LV.wa.inv, .8); }
 function clickAt(x, y) {
+  if (G.scene === 'play' && G.fact) { SFX.click(); dismissFact(); return true; }
   for (let i = uiBtns.length - 1; i >= 0; i--) {
     const b = uiBtns[i];
     if (x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h) { SFX.click(); b.fn(); return true; }
@@ -300,6 +333,7 @@ function clickAt(x, y) {
 }
 function onKey(code, e) {
   if (code === 'KeyM') { save.muted = !save.muted; persist(); return; }
+  if (G.scene === 'play' && G.fact && (code === 'Space' || code === 'Enter' || code === 'Escape')) { e && e.preventDefault(); SFX.click(); dismissFact(); return; }
   if (G.scene === 'play' && (code === 'KeyP' || code === 'Escape')) { G.paused = !G.paused; return; }
   if (G.scene === 'bonus') { bonusKey(code); if (code === 'Enter' || code === 'Space') { const b = uiBtns.find(b => b.primary); if (b) b.fn(); } return; }
   if (G.scene === 'play' && !G.paused && !G.fact) return;
@@ -407,10 +441,11 @@ function updatePlay(dt) {
 
   // input
   let ix = 0, iy = 0;
-  if (keys.left) ix -= 1; if (keys.right) ix += 1; if (keys.up) iy -= 1; if (keys.down) iy += 1;
+  if (keys.left || vk.left) ix -= 1; if (keys.right || vk.right) ix += 1; if (keys.up || vk.up) iy -= 1; if (keys.down || vk.down) iy += 1;
   if (pointer.down && pointer.steer) {
+    // full speed toward the finger until very close, so touch feels snappy
     const tx = pointer.x + lv.cam - wa.x, ty = pointer.y - wa.y, dd = Math.hypot(tx, ty);
-    if (dd > 14) { ix = tx / dd; iy = ty / dd; if (dd < 60) { ix *= dd / 60; iy *= dd / 60; } }
+    if (dd > 6) { ix = tx / dd; iy = ty / dd; if (dd < 28) { ix *= dd / 28; iy *= dd / 28; } }
   }
   const im = Math.hypot(ix, iy); if (im > 1) { ix /= im; iy /= im; }
   wa.dash = Math.max(0, wa.dash - dt); wa.dashCd = Math.max(0, wa.dashCd - dt);
@@ -418,7 +453,7 @@ function updatePlay(dt) {
   if (wa.dash > 0 && im < .1) { ix = wa.face; }
   let tvx = ix * spd, tvy = iy * spd;
   if (!land && Math.abs(iy) < .1) tvy = 28; // gentle sinking, like real swimming
-  const k = Math.min(1, dt * (wa.dash > 0 ? 10 : 5));
+  const k = Math.min(1, dt * (wa.dash > 0 ? 10 : 8.5));
   wa.vx += (tvx - wa.vx) * k; wa.vy += (tvy - wa.vy) * k;
   wa.x += wa.vx * dt; wa.y += wa.vy * dt;
   if (Math.abs(wa.vx) > 12) wa.face = Math.sign(wa.vx);
@@ -1188,7 +1223,16 @@ function drawHUD(st) {
   }
   button(save.muted ? '♪̸' : '♪', W - 104, 14, 42, 42, () => { save.muted = !save.muted; persist(); }, { bg: 'rgba(8,30,36,.6)', size: 20, r: 12 });
   button('II', W - 54, 14, 42, 42, () => { G.paused = !G.paused; }, { bg: 'rgba(8,30,36,.6)', size: 18, r: 12 });
-  if (isTouch) button('DASH', W - 120, H - 92, 100, 72, () => tryDash(), { bg: 'rgba(255,143,58,.7)', size: 20, r: 36 });
+  if (usePad()) { drawPad(); button('DASH', W - 136, H - 118, 116, 92, () => tryDash(), { bg: 'rgba(255,143,58,.6)', size: 24, r: 46 }); }
+}
+function drawPad() {
+  ctx.fillStyle = 'rgba(8,30,36,.25)'; circle(PAD.x, PAD.y, 104);
+  for (const [k, dx, dy] of [['left', -1, 0], ['right', 1, 0], ['up', 0, -1], ['down', 0, 1]]) {
+    const bx = PAD.x + dx * 60, by = PAD.y + dy * 60, on = vk[k];
+    ctx.fillStyle = on ? 'rgba(255,255,255,.8)' : 'rgba(255,255,255,.35)'; circle(bx, by, 32);
+    ctx.fillStyle = on ? '#1d5a56' : 'rgba(8,30,36,.65)';
+    ctx.beginPath(); ctx.moveTo(bx + dx * 13, by + dy * 13); ctx.lineTo(bx - dy * 12 - dx * 8, by + dx * 12 - dy * 8); ctx.lineTo(bx + dy * 12 - dx * 8, by - dx * 12 - dy * 8); ctx.closePath(); ctx.fill();
+  }
 }
 function drawFactPop() {
   // The action is frozen while a fact is open, so it never covers live play.
@@ -1204,14 +1248,34 @@ function drawFactPop() {
   if (f.isNew) txt('NEW in your Fact Journal!', x + 96, y + 62, 14, '#2f9c95', 'left', 700);
   lines.forEach((l, i) => txt(l, x + 96, y + 96 + i * 27, 20, '#23343a', 'left', 400));
   ctx.restore();
-  button('Got it!  ▶', W / 2 - 90, y + h - 62, 180, 46, () => { G.fact = null; LV.wa.inv = Math.max(LV.wa.inv, .8); }, { primary: true, size: 20 });
+  button('Got it!  ▶', W / 2 - 90, y + h - 62, 180, 46, dismissFact, { primary: true, size: 20 });
+  txt(isTouch ? 'Tap anywhere to keep playing' : 'Press Space to keep playing', W / 2, y + h + 22, 16, '#fff', 'center', 600, 'rgba(0,0,0,.5)', 4);
 }
 function drawPause() {
   ctx.fillStyle = 'rgba(5,20,25,.6)'; ctx.fillRect(0, 0, W, H);
-  panel(W / 2 - 200, 150, 400, 240);
-  txt('Paused', W / 2, 200, 40, '#1d5a56', 'center', 700);
-  button('Keep playing', W / 2 - 130, 250, 260, 54, () => { G.paused = false; }, { primary: true });
-  button('Quit to title', W / 2 - 130, 318, 260, 50, () => { G.paused = false; G.scene = 'title'; });
+  panel(W / 2 - 200, 120, 400, 300);
+  txt('Paused', W / 2, 168, 40, '#1d5a56', 'center', 700);
+  button('Keep playing', W / 2 - 130, 212, 260, 54, () => { G.paused = false; }, { primary: true });
+  button('Settings', W / 2 - 130, 280, 260, 50, () => { G.settingsBack = 'play'; G.scene = 'settings'; });
+  button('Quit to title', W / 2 - 130, 344, 260, 50, () => { G.paused = false; G.scene = 'title'; });
+}
+function drawSettings() {
+  const t = G.t;
+  drawWaterBG('shallow', t * 10, t); drawSurface(t * 10, t, 'lily'); dim(.35);
+  panel(150, 40, 660, 460);
+  txt('Settings', W / 2, 84, 38, '#1d5a56', 'center', 700);
+  txt('Touch controls', W / 2, 134, 20, '#c0581a', 'center', 700);
+  const opt = (label, sub, val, x) => {
+    const on = save.controls === val;
+    button((on ? '✓ ' : '') + label, x, 156, 270, 56, () => { save.controls = val; persist(); }, { bg: on ? '#2f9c95' : '#a9bcba', size: 21, r: 16 });
+    para(sub, x + 135, 232, 250, 15, '#23343a', 'center');
+  };
+  opt('Tap & hold', 'Hold your finger where you want Walter to swim. Double-tap to dash.', 'tap', W / 2 - 285);
+  opt('Arrow buttons', 'On-screen arrows in the corner plus a big DASH button.', 'pad', W / 2 + 15);
+  txt('Keyboard: arrows / WASD to swim · Space to dash · P to pause', W / 2, 300, 15, '#2f6a66', 'center', 600);
+  txt('Sound', W / 2, 340, 20, '#c0581a', 'center', 700);
+  button(save.muted ? 'Sound: Off' : 'Sound: On', W / 2 - 110, 360, 220, 48, () => { save.muted = !save.muted; persist(); }, { bg: save.muted ? '#a9bcba' : '#2f9c95', size: 20 });
+  button('Done', W / 2 - 90, 428, 180, 50, () => { G.scene = G.settingsBack || 'title'; }, { primary: true });
 }
 
 /* ---------------- card scenes ---------------- */
@@ -1232,7 +1296,9 @@ function drawTitle() {
   button('▶  Play', W / 2 - 110, 228, 220, 60, newGame, { primary: true, size: 28 });
   button('Fact Journal  ' + save.facts.length + '/' + FACT_IDS.length, W / 2 - 130, 300, 260, 48, () => { G.jpage = 0; G.scene = 'journal'; }, { size: 19 });
   if (save.best) txt('Best score: ' + save.best, W / 2, 368, 17, '#fff', 'center', 600, 'rgba(0,0,0,.45)', 4);
-  txt(isTouch ? 'Touch & hold to swim · DASH button for speed' : 'Arrows / WASD or hold the mouse to swim · SPACE to dash · P pause · M sound', W / 2, H - 20, 15, '#fff', 'center', 600, 'rgba(0,0,0,.5)', 4);
+  button('◀ All Games', 14, 14, 150, 42, goHub, { bg: 'rgba(8,30,36,.6)', size: 18, r: 12 });
+  button('Settings', 174, 14, 120, 42, () => { G.settingsBack = 'title'; G.scene = 'settings'; }, { bg: 'rgba(8,30,36,.6)', size: 18, r: 12 });
+  txt(isTouch ? (usePad() ? 'Use the arrow buttons to swim · DASH for speed' : 'Touch & hold to swim · double-tap to dash') : 'Arrows / WASD or hold the mouse to swim · SPACE to dash · P pause · M sound', W / 2, H - 20, 15, '#fff', 'center', 600, 'rgba(0,0,0,.5)', 4);
   button(save.muted ? '♪̸' : '♪', W - 56, 14, 42, 42, () => { save.muted = !save.muted; persist(); }, { bg: 'rgba(8,30,36,.6)', size: 20, r: 12 });
 }
 function drawIntro() {
@@ -1328,8 +1394,9 @@ function drawWin() {
   txt(`Facts discovered: ${save.facts.length} / ${FACT_IDS.length}`, W / 2, 340, 18, '#2f6a66', 'center', 600);
   ctx.fillStyle = '#fff3c9'; rr(150, 362, 660, 70, 14); ctx.fill();
   para('Walter\'s Adventures is based on Walter, a real Western Tiger Salamander and a much-loved family pet.', W / 2, 382, 620, 17, '#23343a', 'center', 1.3, 600);
-  button('Play again', W / 2 - 220, 448, 200, 50, newGame, { primary: true });
-  button('Fact Journal', W / 2 + 20, 448, 200, 50, () => { G.jpage = 0; G.scene = 'journal'; });
+  button('Play again', W / 2 - 310, 448, 190, 50, newGame, { primary: true });
+  button('Fact Journal', W / 2 - 95, 448, 190, 50, () => { G.jpage = 0; G.scene = 'journal'; });
+  button('◀ All Games', W / 2 + 120, 448, 190, 50, goHub);
 }
 function drawJournal() {
   const t = G.t;
@@ -1532,6 +1599,7 @@ function bonusHud(label, left) {
 function update(dt) {
   G.t += dt; G.shake = Math.max(0, G.shake - dt * 30);
   if (!G.fact && G.factQ.length) G.fact = { ...G.factQ.shift(), t: 0 };
+  computeVK();
   if (G.fact) G.fact.t += dt;
   if (G.scene === 'play' && !G.paused && !G.fact) updatePlay(dt);
   else if (G.scene === 'bonus') updateBonus(dt);
@@ -1550,6 +1618,7 @@ function draw() {
     case 'over': drawOver(); break;
     case 'win': drawWin(); break;
     case 'journal': drawJournal(); break;
+    case 'settings': drawSettings(); break;
   }
   uiBtns = btns;
 }
